@@ -148,12 +148,13 @@ uint32 FBristleconeSender::Run() {
 				int32 bytes_sent;
 				//we may want a mode to timestamp each individual packet during testing so we can get a unique rtt
 				const FControllerStatePacket* current_controller_state = packet_container.GetPacket();
+				auto holdopen = endpoint;
 				bool packet_sent = sender_socket_high->SendTo(reinterpret_cast<const uint8*>(current_controller_state), sizeof(FControllerStatePacket),
-					bytes_sent, *endpoint.ToInternetAddr());
+					bytes_sent, *holdopen.ToInternetAddr());
 				packet_sent = sender_socket_low->SendTo(reinterpret_cast<const uint8*>(current_controller_state), sizeof(FControllerStatePacket),
-					bytes_sent, *endpoint.ToInternetAddr());
+					bytes_sent, *holdopen.ToInternetAddr());
 				packet_sent = sender_socket_background->SendTo(reinterpret_cast<const uint8*>(current_controller_state), sizeof(FControllerStatePacket),
-					bytes_sent, *endpoint.ToInternetAddr());
+					bytes_sent, *holdopen.ToInternetAddr());
 
 
 				if (bytes_sent == 0) {
