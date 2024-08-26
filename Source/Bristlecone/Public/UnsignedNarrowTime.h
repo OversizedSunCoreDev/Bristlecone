@@ -12,6 +12,6 @@ public:
 	{
 
 		using namespace std::chrono;
-		return duration_cast<std::chrono::duration<uint32_t, std::micro>>(steady_clock::now().time_since_epoch()).count();
+		return duration_cast<std::chrono::duration<uint32_t, std::micro>>(system_clock::now().time_since_epoch()).count();
 	};
 };
