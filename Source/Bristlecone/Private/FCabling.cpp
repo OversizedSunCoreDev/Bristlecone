@@ -45,9 +45,11 @@ uint32 FCabling::Run() {
 	constexpr uint32_t sampleHertz = TheCone::CablingSampleHertz;
 	constexpr uint32_t sendHertz = TheCone::BristleconeSendHertz;
 	constexpr uint32_t sendHertzFactor = sampleHertz/sendHertz; 
-	constexpr uint32_t periodInNano = 1000000 / sampleHertz; //swap to microseconds. standardizing.
+	constexpr uint32_t Period = 1000000 / sampleHertz; //swap to microseconds. standardizing.
 
 
+	
+	constexpr auto Step = std::chrono::milliseconds(Period/2000);
 	//We're using the GameInput lib.
 	//https://learn.microsoft.com/en-us/gaming/gdk/_content/gc/input/overviews/input-overview
 	//https://learn.microsoft.com/en-us/gaming/gdk/_content/gc/input/advanced/input-keyboard-mouse will be fun
@@ -69,7 +71,7 @@ uint32 FCabling::Run() {
 	//Looks like PS4/PS5 won't be too bad, just gotta watch out for Fun Device ID changes.
 	while (running)
 	{
-		if ((lastPollTime + periodInNano) <= lsbTime)
+		if ((lastPollTime + Period) <= lsbTime)
 		{
 
 

@@ -122,27 +122,6 @@ void UBristleconeWorldSubsystem::Deinitialize() {
 void UBristleconeWorldSubsystem::Tick(float DeltaTime) {
 	Super::Tick(DeltaTime);
 	++logTicker;
-	if (DebugSend.IsValid())
-	{
-		for (int i = 0; i < 50; ++i)
-		{
-			DebugSend.Get()->Enqueue(0xDB000000DEADBEEF);
-			WakeSender->Trigger();
-		}
-	}
-	if (SelfBind.IsValid())
-	{
-		while (!SelfBind->IsEmpty())
-		{
-			const TheCone::Packet_tpl* current = SelfBind->Peek();
-			if (LogOnReceive)
-			{
-				uint32_t lsbTime = NarrowClock::getSlicedMicrosecondNow();
-				UE_LOG(LogTemp, Warning, TEXT("Bristlecone: With UE Frame Latency, %ld, %ld"), lsbTime - current->GetTransferTime(), current->GetCycleMeta());
-			}
-			SelfBind->Dequeue();
-		}
-	}
 	if (logTicker >= 30)
 	{
 		logTicker = 0;
