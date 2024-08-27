@@ -49,7 +49,7 @@ uint32 FCabling::Run() {
 
 
 	
-	constexpr auto Step = std::chrono::milliseconds(Period/2000);
+	constexpr auto HalfStep = std::chrono::microseconds(Period/2);
 	//We're using the GameInput lib.
 	//https://learn.microsoft.com/en-us/gaming/gdk/_content/gc/input/overviews/input-overview
 	//https://learn.microsoft.com/en-us/gaming/gdk/_content/gc/input/advanced/input-keyboard-mouse will be fun
@@ -156,11 +156,13 @@ uint32 FCabling::Run() {
 		//sequence number is still the actual arbiter, so we'll only send every 4 periods, even if we poll
 		//one less or one more time.
 
-		// this is technically a kind of spin lock,
-		// checking the steady clock is actually quite a long operation
-		std::this_thread::yield(); // but this gets... weird.
+		//modified to ensure we don't oversleep. we busy cycle if we're less than 1.1 ms out.
 		lsbTime = NarrowClock::getSlicedMicrosecondNow();
-		
+		if(lsbTime <=  (lastPollTime + Period) - ( 1.1* (HalfStep).count()))
+		{
+			std::this_thread::sleep_for(HalfStep); 
+			lsbTime = NarrowClock::getSlicedMicrosecondNow();
+		}
 		if (lsbTime < lastPollTime)
 		{
 			lastPollTime = lsbTime;
