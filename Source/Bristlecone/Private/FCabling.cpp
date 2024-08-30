@@ -73,12 +73,72 @@ uint32 FCabling::Run() {
 	{
 		if ((lastPollTime + Period) <= lsbTime)
 		{
-
-
+			
 			lastPollTime = lsbTime;
-			if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
+			// I dunno, but I'm gonna try and put some keyboard detection code in here and see what happens *shrugs*
+			if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindKeyboard, nullptr, &reading)))
 			{
 
+				uint32_t keyCount = reading->GetKeyCount();
+				
+				GameInputKeyState* states = new GameInputKeyState[keyCount];
+				reading->GetKeyState(keyCount, states);
+
+				double xMagnitude = 0.0;
+				double yMagnitude = 0.0;
+				
+				for (uint32_t i = 0; i < keyCount; i++)
+				{
+					// A
+					if (states[i].codePoint == 65)
+					{
+						xMagnitude -= 1.0;
+					}
+					// D
+					if (states[i].codePoint == 68)
+					{
+						xMagnitude += 1.0;
+					}
+					// S
+					if (states[i].codePoint == 83)
+					{
+						yMagnitude -= 1.0;
+					}
+					// W
+					if (states[i].codePoint == 87)
+					{
+						yMagnitude += 1.0;
+					}
+				}
+
+				if (!sent)
+				{
+					FCableInputPacker boxing;
+					boxing.lx = (uint32_t)boxing.IntegerizedStick(xMagnitude);
+					boxing.ly = (uint32_t)boxing.IntegerizedStick(yMagnitude);
+					boxing.rx = (uint32_t)boxing.IntegerizedStick(0.0);
+					boxing.ry = (uint32_t)boxing.IntegerizedStick(0.0);
+					boxing.buttons = 0; // temporarily no buttons
+					boxing.events = 0;
+					currentRead = boxing.PackImpl();
+
+					if ((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
+					{
+						//push to both queues.
+						this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
+						this->GameThreadControlQueue.Get()->Enqueue(currentRead);
+						WakeTransmitThread->Trigger();
+						sent = true;
+					}
+					priorReading = currentRead;
+				}
+
+				delete[] states;
+			}
+			// I don't actually have a gamepad attached so I don't know what this code is doing, so I put it in an else
+			// to be safe
+			else if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
+			{
 				// If no device has been assigned to g_gamepad yet, set it
 				// to the first device we receive input from. (This must be
 				// the one the player is using because it's generating input.)
