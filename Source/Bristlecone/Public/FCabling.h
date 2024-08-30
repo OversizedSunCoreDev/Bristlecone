@@ -5,7 +5,12 @@
 #include "FCablePackedInput.h"
 #include "BristleconeCommonTypes.h"
 #include <chrono> 
+THIRD_PARTY_INCLUDES_START
+#include "Microsoft/AllowMicrosoftPlatformTypes.h"
+#include "Microsoft/HideMicrosoftPlatformTypes.h"
 
+#include <GameInput.h>
+THIRD_PARTY_INCLUDES_END
 #include "Containers/CircularQueue.h"
 
 
@@ -23,6 +28,10 @@ public:
 	virtual ~FCabling() override;
 
 	virtual bool Init() override;
+	void Keyboard(IGameInputReading* reading, bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead,
+	              uint32_t sendHertzFactor);
+	void GamePad(bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead, uint32_t sendHertzFactor,
+	             GameInputGamepadState state);
 	virtual uint32 Run() override;
 	virtual void Exit() override;
 	virtual void Stop() override;
