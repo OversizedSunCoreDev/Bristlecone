@@ -174,8 +174,6 @@ uint32 FCabling::Run() {
 				Keyboard(reading, sent, seqNumber, priorReading, currentRead, sendHertzFactor);
 				reading->Release();
 			}
-			// I don't actually have a gamepad attached so I don't know what this code is doing, so I put it in an else
-			// to be safe
 			else if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
 			{
 				// If no device has been assigned to g_gamepad yet, set it
