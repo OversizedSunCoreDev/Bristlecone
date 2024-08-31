@@ -1,9 +1,5 @@
 ﻿#include "FCabling.h"
-THIRD_PARTY_INCLUDES_START
-#include "Microsoft/AllowMicrosoftPlatformTypes.h"
-#include "GameInput.h"
-#include "Microsoft/HideMicrosoftPlatformTypes.h"
-THIRD_PARTY_INCLUDES_END
+
 #include <bitset>
 #include <thread>
 using std::bitset;
@@ -25,6 +21,102 @@ bool FCabling::Init() {
 	return true;
 }
 
+
+void FCabling::Keyboard(IGameInputReading* reading, bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead, const uint32_t sendHertzFactor)
+{
+	uint32_t keyCount = reading->GetKeyCount();
+
+	//if you hold down more than 16 keys, you need help or you're using macros.
+	GameInputKeyState states[16];
+	reading->GetKeyState(keyCount, states);
+
+	double xMagnitude = 0.0;
+	double yMagnitude = 0.0;
+				
+	for (uint32_t i = 0; i < keyCount; i++)
+	{
+		// A
+		if (states[i].codePoint == 65)
+		{
+			xMagnitude -= 1.0;
+		}
+		// D
+		if (states[i].codePoint == 68)
+		{
+			xMagnitude += 1.0;
+		}
+		// S
+		if (states[i].codePoint == 83)
+		{
+			yMagnitude -= 1.0;
+		}
+		// W
+		if (states[i].codePoint == 87)
+		{
+			yMagnitude += 1.0;
+		}
+	}
+
+	if (!sent)
+	{
+		FCableInputPacker boxing;
+		boxing.lx = (uint32_t)boxing.IntegerizedStick(xMagnitude);
+		boxing.ly = (uint32_t)boxing.IntegerizedStick(yMagnitude);
+		boxing.rx = (uint32_t)boxing.IntegerizedStick(0.0);
+		boxing.ry = (uint32_t)boxing.IntegerizedStick(0.0);
+		boxing.buttons = 0; // temporarily no buttons
+		boxing.events = 0;
+		currentRead = boxing.PackImpl();
+
+		if ((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
+		{
+			//push to both queues.
+			this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
+			this->GameThreadControlQueue.Get()->Enqueue(currentRead);
+			WakeTransmitThread->Trigger();
+			sent = true;
+		}
+		priorReading = currentRead;
+	}
+	
+}
+
+void FCabling::GamePad(bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead, const uint32_t sendHertzFactor, GameInputGamepadState state)
+{
+	if (!sent)
+	{
+		FCableInputPacker boxing;
+		//very fun story. unless you explicitly import and use std::bitset
+		//the wrong thing happens here. I'm not going to speculate on why, because
+		//I don't think I can do so without swearing extensively.
+		boxing.lx = (uint32_t)boxing.IntegerizedStick(state.leftThumbstickX);
+		boxing.ly = (uint32_t)boxing.IntegerizedStick(state.leftThumbstickY);
+		boxing.rx = (uint32_t)boxing.IntegerizedStick(state.rightThumbstickX);
+		boxing.ry = (uint32_t)boxing.IntegerizedStick(state.rightThumbstickY);
+		boxing.buttons = (uint32_t)state.buttons; //strikingly, there's no paddle field.
+		boxing.buttons.set(12, (state.leftTrigger > 0.55)); //check the bitfield.
+		boxing.buttons.set(13, (state.rightTrigger > 0.55));
+		boxing.events = 0;
+		currentRead = boxing.PackImpl();
+
+		//because we deadzone and integerize, we actually have a pretty good idea
+		//of when input actually changes. 2048 positions for the stick along each axis
+		//actually looks like it's enough to give us precise movement while still
+		//excising some amount of jitter. Because we always round down, you have to move
+		//fully to a new position and this seems to be a larger delta than the average
+		//heart-rate jitter or control noise.
+		//TODO: this line might actually be wrong. I just redid the math, and it looks right but...
+		if ((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
+		{
+			//push to both queues.
+			this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
+			this->GameThreadControlQueue.Get()->Enqueue(currentRead);
+			WakeTransmitThread->Trigger();
+			sent = true;
+		}
+		priorReading = currentRead;
+	}
+}
 
 //this is based directly on the gameinput sample code.
 uint32 FCabling::Run() {
@@ -73,12 +165,17 @@ uint32 FCabling::Run() {
 	{
 		if ((lastPollTime + Period) <= lsbTime)
 		{
-
-
+			
 			lastPollTime = lsbTime;
-			if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
+			// I dunno, but I'm gonna try and put some keyboard detection code in here and see what happens *shrugs*
+			if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindKeyboard, nullptr, &reading)))
 			{
 
+				Keyboard(reading, sent, seqNumber, priorReading, currentRead, sendHertzFactor);
+				reading->Release();
+			}
+			else if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
+			{
 				// If no device has been assigned to g_gamepad yet, set it
 				// to the first device we receive input from. (This must be
 				// the one the player is using because it's generating input.)
@@ -99,39 +196,7 @@ uint32 FCabling::Run() {
 				reading->GetGamepadState(&state);
 				reading->Release();
 
-				if (!sent)
-				{
-					FCableInputPacker boxing;
-					//very fun story. unless you explicitly import and use std::bitset
-					//the wrong thing happens here. I'm not going to speculate on why, because
-					//I don't think I can do so without swearing extensively.
-					boxing.lx = (uint32_t)boxing.IntegerizedStick(state.leftThumbstickX);
-					boxing.ly = (uint32_t)boxing.IntegerizedStick(state.leftThumbstickY);
-					boxing.rx = (uint32_t)boxing.IntegerizedStick(state.rightThumbstickX);
-					boxing.ry = (uint32_t)boxing.IntegerizedStick(state.rightThumbstickY);
-					boxing.buttons = (uint32_t)state.buttons; //strikingly, there's no paddle field.
-					boxing.buttons.set(12, (state.leftTrigger > 0.55)); //check the bitfield.
-					boxing.buttons.set(13, (state.rightTrigger > 0.55));
-					boxing.events = 0;
-					currentRead = boxing.PackImpl();
-
-					//because we deadzone and integerize, we actually have a pretty good idea
-					//of when input actually changes. 2048 positions for the stick along each axis
-					//actually looks like it's enough to give us precise movement while still
-					//excising some amount of jitter. Because we always round down, you have to move
-					//fully to a new position and this seems to be a larger delta than the average
-					//heart-rate jitter or control noise.
-					//TODO: this line might actually be wrong. I just redid the math, and it looks right but...
-					if ((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
-					{
-						//push to both queues.
-						this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
-						this->GameThreadControlQueue.Get()->Enqueue(currentRead);
-						WakeTransmitThread->Trigger();
-						sent = true;
-					}
-					priorReading = currentRead;
-				}
+				GamePad(sent, seqNumber, priorReading, currentRead, sendHertzFactor, state);
 
 			}
 			else if (g_gamepad != nullptr)
@@ -139,6 +204,7 @@ uint32 FCabling::Run() {
 				g_gamepad->Release();
 				g_gamepad = nullptr;
 			}
+			
 
 			if ((seqNumber % sampleHertz) == 0)
 			{
