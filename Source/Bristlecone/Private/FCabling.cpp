@@ -75,8 +75,8 @@ uint32 FCabling::Run() {
 		{
 			
 			lastPollTime = lsbTime;
-			// I dunno, but I'm gonna try and put some keyboard detection code in here and see what happens *shrugs*
-			if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindKeyboard, nullptr, &reading)))
+			
+			if (!sent && g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindKeyboard, nullptr, &reading)))
 			{
 
 				uint32_t keyCount = reading->GetKeyCount();
@@ -111,7 +111,8 @@ uint32 FCabling::Run() {
 					}
 				}
 
-				if (!sent)
+				
+				if ((xMagnitude != 0 || yMagnitude != 0 ))
 				{
 					FCableInputPacker boxing;
 					boxing.lx = (uint32_t)boxing.IntegerizedStick(xMagnitude);
@@ -135,9 +136,7 @@ uint32 FCabling::Run() {
 
 				delete[] states;
 			}
-			// I don't actually have a gamepad attached so I don't know what this code is doing, so I put it in an else
-			// to be safe
-			else if (g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
+			else if (!sent && g_gameInput && SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
 			{
 				// If no device has been assigned to g_gamepad yet, set it
 				// to the first device we receive input from. (This must be
