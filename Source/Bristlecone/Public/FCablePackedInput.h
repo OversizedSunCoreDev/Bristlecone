@@ -54,7 +54,10 @@ public:
 	static const uint64 contraction = 128;
 	static const uint64 zero_encoding = 1000;
 	//sums to 64! I counted. Like 30 times.
-	
+	bool HasAnyStickData()
+	{
+		return lx != zero_encoding || ly != zero_encoding || rx != zero_encoding || ry != zero_encoding;
+	}
 	uint64_t PackImpl() override
 	{
 		uint64_t box = 0;

@@ -28,10 +28,12 @@ public:
 	virtual ~FCabling() override;
 
 	virtual bool Init() override;
-	void Keyboard(IGameInputReading* reading, bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead,
+	bool EvaluateAndAttemptSend(bool sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead,
+	                       uint32_t sendHertzFactor);
+	bool KeyboardStateMachine(IGameInputReading* reading, bool sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead,
 	              uint32_t sendHertzFactor);
-	void GamePad(bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead, uint32_t sendHertzFactor,
-	             GameInputGamepadState state);
+	bool GamepadStateMachine(IGameInputReading* reading, bool sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead, const uint32_t
+	             sendHertzFactor);
 	virtual uint32 Run() override;
 	virtual void Exit() override;
 	virtual void Stop() override;

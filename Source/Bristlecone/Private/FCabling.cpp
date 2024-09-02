@@ -23,11 +23,28 @@ bool FCabling::Init()
 }
 
 
-void FCabling::Keyboard(IGameInputReading* reading, bool& sent, int seqNumber, uint64_t& priorReading,
-                        uint64_t& currentRead, const uint32_t sendHertzFactor)
+bool FCabling::EvaluateAndAttemptSend(bool sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead,
+                                          const uint32_t sendHertzFactor)
+{
+	if (
+		!sent &&
+		((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
+	)
+	{
+		//push to both queues.
+		this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
+		this->GameThreadControlQueue.Get()->Enqueue(currentRead);
+		WakeTransmitThread->Trigger();
+		return true;
+	}
+	return sent;
+}
+
+bool FCabling::KeyboardStateMachine(IGameInputReading* reading, bool sent, int seqNumber, uint64_t& priorReading,
+                                    uint64_t& currentRead, const uint32_t sendHertzFactor)
 {
 	uint32_t keyCount = reading->GetKeyCount();
-
+	bool retvalue = sent;
 	//if you hold down more than 16 keys, you need help or you're using macros.
 	GameInputKeyState states[16];
 	reading->GetKeyState(keyCount, states);
@@ -59,32 +76,36 @@ void FCabling::Keyboard(IGameInputReading* reading, bool& sent, int seqNumber, u
 		}
 	}
 
-	if (xMagnitude != 0 || yMagnitude != 0)
+	FCableInputPacker boxing;
+	boxing.lx = (uint32_t)boxing.IntegerizedStick(xMagnitude);
+	boxing.ly = (uint32_t)boxing.IntegerizedStick(yMagnitude);
+	boxing.rx = (uint32_t)boxing.IntegerizedStick(0.0);
+	boxing.ry = (uint32_t)boxing.IntegerizedStick(0.0);
+	boxing.buttons = 0; // temporarily no buttons
+	boxing.events = 0;
+	currentRead = boxing.PackImpl();
+	//don't check events because we may set an event to indicate that we're on keeb input....
+	if(boxing.HasAnyStickData() || boxing.buttons != 0)
 	{
-		FCableInputPacker boxing;
-		boxing.lx = (uint32_t)boxing.IntegerizedStick(xMagnitude);
-		boxing.ly = (uint32_t)boxing.IntegerizedStick(yMagnitude);
-		boxing.rx = (uint32_t)boxing.IntegerizedStick(0.0);
-		boxing.ry = (uint32_t)boxing.IntegerizedStick(0.0);
-		boxing.buttons = 0; // temporarily no buttons
-		boxing.events = 0;
-		currentRead = boxing.PackImpl();
-
-		if ((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
-		{
-			//push to both queues.
-			this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
-			this->GameThreadControlQueue.Get()->Enqueue(currentRead);
-			WakeTransmitThread->Trigger();
-			sent = true;
-		}
-		priorReading = currentRead;
+		retvalue = EvaluateAndAttemptSend(sent, seqNumber, priorReading, currentRead, sendHertzFactor);
 	}
+	priorReading = currentRead;
+	return retvalue;
 }
 
-void FCabling::GamePad(bool& sent, int seqNumber, uint64_t& priorReading, uint64_t& currentRead,
-                       const uint32_t sendHertzFactor, GameInputGamepadState state)
+//Sets Sent if prip
+bool FCabling::GamepadStateMachine(IGameInputReading* reading, bool sent, int seqNumber, uint64_t& priorReading,
+                                   uint64_t& currentRead,
+                                   const uint32_t sendHertzFactor)
 {
+	// If no device has been assigned to g_gamepad yet, set it
+	// to the first device we receive input from. (This must be
+	// the one the player is using because it's generating input.)
+
+	// Retrieve the fixed-format gamepad state from the reading.
+	bool retvalue = sent;
+	GameInputGamepadState state;
+	reading->GetGamepadState(&state);
 	FCableInputPacker boxing;
 	//very fun story. unless you explicitly import and use std::bitset
 	//the wrong thing happens here. I'm not going to speculate on why, because
@@ -106,15 +127,9 @@ void FCabling::GamePad(bool& sent, int seqNumber, uint64_t& priorReading, uint64
 	//fully to a new position and this seems to be a larger delta than the average
 	//heart-rate jitter or control noise.
 	//TODO: this line might actually be wrong. I just redid the math, and it looks right but...
-	if ((seqNumber % sendHertzFactor) == 0 || (currentRead != priorReading))
-	{
-		//push to both queues.
-		this->CabledThreadControlQueue.Get()->Enqueue(currentRead);
-		this->GameThreadControlQueue.Get()->Enqueue(currentRead);
-		WakeTransmitThread->Trigger();
-		sent = true;
-	}
+	retvalue = EvaluateAndAttemptSend(sent, seqNumber, priorReading, currentRead, sendHertzFactor);
 	priorReading = currentRead;
+	return retvalue;
 }
 
 //this is based directly on the gameinput sample code.
@@ -128,7 +143,9 @@ uint32 FCabling::Run()
 	//TODO: why does this seem to need to be an int? I'm assuming something about type 64/32 coercion or
 	//the mod operator is that I knew when I wrote this code, but I no longer remember and it should get a docs note.
 	int seqNumber = 0;
-	uint64_t priorReading = 0;
+	uint64_t priorReadingKeyboard = 0;
+
+	uint64_t priorReadingGamepad = 0;
 	uint64_t currentRead = 0;
 	//Hi! Jake here! Reminding you that this will CYCLE
 	//That's known. Isn't that fun? :) Don't reorder these, by the way.
@@ -165,33 +182,35 @@ uint32 FCabling::Run()
 		if ((lastPollTime + Period) <= lsbTime)
 		{
 			lastPollTime = lsbTime;
-			if (!sent && g_gameInput &&
+			//if it's been blown up or if create failed.
+			if(!g_gameInput || !SUCCEEDED(gameInputSpunUp))
+			{
+				gameInputSpunUp = GameInputCreate(&g_gameInput);
+			}
+
+			//Sent is checked & managed deep in the meat. this state machine needs a refactor badly.
+			if (g_gameInput &&
 				SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindKeyboard, nullptr, &reading)))
 			{
 				//if we don't have a WASD input, we don't send, and we'll check the controller next.
-				Keyboard(reading, sent, seqNumber, priorReading, currentRead, sendHertzFactor);
+				sent = KeyboardStateMachine(reading, sent, seqNumber, priorReadingKeyboard, currentRead, sendHertzFactor);
 				reading->Release();
 			}
-			else if (!sent && g_gameInput &&
+
+			if (g_gameInput &&
 				SUCCEEDED(g_gameInput->GetCurrentReading(GameInputKindGamepad, g_gamepad, &reading)))
 			{
-				// If no device has been assigned to g_gamepad yet, set it
-				// to the first device we receive input from. (This must be
-				// the one the player is using because it's generating input.)
 				if (!g_gamepad)
 				{
 					reading->GetDevice(&g_gamepad);
 				}
-				// Retrieve the fixed-format gamepad state from the reading.
-				GameInputGamepadState state;
-				reading->GetGamepadState(&state);
+				sent = GamepadStateMachine(reading, sent, seqNumber, priorReadingGamepad, currentRead, sendHertzFactor);
 				reading->Release();
-
-				GamePad(sent, seqNumber, priorReading, currentRead, sendHertzFactor, state);
 			}
 			else if (g_gamepad != nullptr)
+			// if gamepad read failed but a gamepad exists, we're in a failed state.
 			{
-				g_gamepad->Release();
+				g_gamepad->Release(); //release it, we'll reacquire it on the next pass.
 				g_gamepad = nullptr;
 			}
 
