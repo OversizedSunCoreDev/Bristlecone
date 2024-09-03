@@ -3,6 +3,7 @@
 
 #include "UBristleconeWorldSubsystem.h"
 
+#include "UCablingWorldSubsystem.h"
 #include "Common/UdpSocketBuilder.h"
 
 
@@ -22,6 +23,19 @@ void UBristleconeWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	sender_runner.AddTargetAddress(address);
 	UE_LOG(LogTemp, Warning, TEXT("BCN will not start unless another subsystem creates and binds queues during PostInitialize."));
 	UE_LOG(LogTemp, Warning, TEXT("Bristlecone:Subsystem: Subsystem world initialized"));
+}
+void UBristleconeWorldSubsystem::PostInitialize()
+{
+	UCablingWorldSubsystem* Cabling = GetTickableGameObjectWorld()->GetSubsystem< UCablingWorldSubsystem>();
+	if (Cabling == nullptr)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UBristleconeWorldSubsystem: No Cabling subsystem to connect to!"));
+	}
+	QueueToSend = Cabling->CabledThreadControlQueue;
+	//this is a really odd take on the RAII model where it's to the point where FSharedEventRef should NEVER be alloc'd with new.
+	//As is, we know that the event ref objects share the lifecycle of their owners exactly, being alloc'd and dealloced with them.
+	//so we set ours equal to theirs, and the ref count will only drop when we are fully deinit'd
+	Cabling->controller_runner.WakeTransmitThread = WakeSender;
 }
 
 void UBristleconeWorldSubsystem::OnWorldBeginPlay(UWorld& InWorld) {
