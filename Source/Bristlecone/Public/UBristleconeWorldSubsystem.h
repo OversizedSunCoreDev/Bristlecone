@@ -23,6 +23,7 @@ class BRISTLECONE_API UBristleconeWorldSubsystem : public UTickableWorldSubsyste
 
 protected:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	void PostInitialize() override;
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 
