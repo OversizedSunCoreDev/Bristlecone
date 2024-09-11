@@ -20,5 +20,15 @@
 			"Type": "Runtime",
 			"LoadingPhase": "PostEngineInit"
 		}
+	],
+	"Plugins": [
+		{
+			"Name": "Cabling",
+			"Enabled": true
+		},
+		{
+			"Name": "SkeletonKey",
+			"Enabled": true
+		}
 	]
 }
